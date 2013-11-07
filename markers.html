@@ -1,0 +1,353 @@
+<!DOCTYPE html >
+<head>
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+<title>Testing Map Search Sample</title>
+<script type="text/javascript" src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
+<script type="text/javascript" src="http://maps.googleapis.com/maps/api/js?sensor=false"></script>	
+<script type="text/javascript">
+	
+//This is a jquery/ajax/php solution that shows real estate markers on a map. 
+//This file needs a php file and a database connection to be fully functional
+ 
+//initialize variables.  
+var markersArray = [];
+var page = 0;
+
+//the main function at $(document).ready event
+$(document).ready(function() {
+	
+	//load google map centered on Southport, NC
+    var myLatlng = new google.maps.LatLng(33.9216,-78.0203);
+    var myOptions = {
+        zoom: 10,
+        center: myLatlng,
+        mapTypeId: google.maps.MapTypeId.ROADMAP
+    }
+    var map = new google.maps.Map(document.getElementById("map-canvas"), myOptions);
+
+	
+	//call marker function	
+    google.maps.event.addListener(map, 'tilesloaded', function () {
+		page = 0;
+		loadMapFromCurrentBounds(map);
+    }); 
+	
+	
+	//pseudo-event listners, when user made changes on preferences, load markers
+	$('#beds').change(function(){
+		page = 0;
+		loadMapFromCurrentBounds(map);
+	});
+
+	$('#baths').change(function(){
+		page = 0;
+		loadMapFromCurrentBounds(map);
+	});
+	
+	$('#property').change(function(){
+		page = 0;
+		loadMapFromCurrentBounds(map);
+	});
+	
+	$('#price').change(function(){
+		page = 0;
+		loadMapFromCurrentBounds(map);
+	});	
+	
+	$('#sqft').change(function(){
+		page = 0;
+		loadMapFromCurrentBounds(map);
+	});
+	
+	$('.more').click(function() {	
+		page = page + 1;
+		loadMapFromCurrentBounds(map);	
+	});
+	
+});
+	
+	//marker loading function		
+function loadMapFromCurrentBounds(map) {
+
+    //get the value from user input
+	var bed = $('#beds').val();
+	var bath = $('#baths').val();
+	var property = $('#property').val();
+	var price = $('#price').val();
+	var sqft = $('#sqft').val();
+	
+	//clean 'results' div, the left column
+	$('#results').empty();
+	
+	//initial value at the left column
+	$('#results').append("<h2>Recent Properties</h2>");
+	
+	//call marker eraser to remove old markers
+	clearOverlays();
+	
+    //determine the map bounds
+    var bounds = map.getBounds();
+
+    //the edge points
+    var swPoint = bounds.getSouthWest();
+    var nePoint = bounds.getNorthEast();
+
+    // 4 corners, individual coordinate
+    var swLat = swPoint.lat();
+    var swLng = swPoint.lng();
+    var neLat = nePoint.lat();
+    var neLng = nePoint.lng();
+	
+	//ajax sends data to a php script and get json result
+	$.ajax({
+	
+		url: location.protocol + "//" + location.host + "/includes/ajax/markers.php", 
+		data: {swlat: swLat, swlng: swLng, nelat: neLat, nelng: neLng, beds: bed, baths: bath, type: property, price: price, sqft:sqft, page:page},
+		dataType: 'json',
+		type: 'post',
+		success: function(result){
+
+			//set up an infowindow before processing the data.
+			//(if infowindow is set inside the '.each' loop, multiple windows pops up.
+			
+			var infowindow = new google.maps.InfoWindow({
+				maxWidth: 300
+			});
+		
+			$.each( result, function(key, value) {		
+				
+				//clean up data. Bedroom, Bathroom, and Prices are stored in float in the raw data. So they should be converted to integers.
+				
+				var Bedroom = Math.floor(value.Bedrooms);
+				var Bathroom = Math.floor(value.Bathrooms);
+				var ListPrice = numberWithCommas(value.ListingPrice);
+				
+				//set up content html
+				var infowindowstring = "<div class='searchListing'>" 
+				+ "<div class='subdivision'>" + value.Subdivision + "</div>"		
+				+ "<div class='idxImage'>"
+				+ "<a href = '/idx/residential/" + value.Id + "'><img src='http://images.impactmediacore.com/" + value.Source + "/" + value.MLNumber + "_1.jpg' width='250px' /></a></div>"
+				+ "<div class='mlsNumber'>MLS #: " + value.MLNumber + "</div>"
+				+ "<div class='mlsPrice'>$" + ListPrice + "</div><br/>"
+				+ "<div class='mlsAddress'>" + value.Address + " " + value.City + ", " + value.State + "</div><br/>";	
+		
+				//set up marker title
+				var markertitle = "$" + ListPrice;
+
+				infowindowstring = infowindowstring + "<div class='mlsInfo'>";
+		
+				//populate bedroom if bedroom exists
+				if (Bedroom > 0)
+				{
+					infowindowstring = infowindowstring + "<div class='mlsBed'>Beds: " + Bedroom + " </div> ";
+					markertitle = markertitle + ", "+ Bedroom + "Beds";		
+				}
+				
+				//populate bathroom if bathroom exists
+				if (Bathroom >0)
+				{	
+					infowindowstring = infowindowstring + "<div class='mlsBath'>&nbsp;Baths: " + Bathroom + " |</div> ";
+					markertitle = markertitle + ", " + Bathroom + "Baths";
+				}
+				
+				//squarefoot value field is not homogeneous. 
+				
+				if ((value.SquareFootRange != 0) && (value.SquareFootRange !=null) && (value.SquareFootRange != ''))
+				{
+					infowindowstring = infowindowstring + "<div class='mlsAcres'>&nbsp;SqFt: " + value.SquareFootRange + "</div>";
+				}
+
+				//add acres value if exists
+				if (value.Acres >0)
+				{
+					infowindowstring = infowindowstring + "<div class='mlsAcres'>&nbsp; | &nbsp;Acres: " + value.Acres +" </div></div>";
+					markertitle = markertitle + ", " + value.Acres + " Acres"
+				}
+		
+				//add href link
+				infowindowstring = infowindowstring 
+				+ "<a href = '/idx/residential/" + value.Id + "'><div class='mlsViewProp'>View This Property </a>"
+				+ "</div>";			
+		
+				//append the content to the left column
+				$('#results').append(infowindowstring);
+		
+		
+				//set up a marker
+				var myLatLng = new google.maps.LatLng(value.Latitude, value.Longitude);
+				var marker = new google.maps.Marker({
+					position: myLatLng,
+					title: markertitle,
+				});
+			
+				//add onclick event to the marker (open infowindow)
+				//add content to the infowindow
+				google.maps.event.addListener(marker, 'click', function() {
+					infowindow.setContent(infowindowstring);
+					infowindow.open(map, marker);
+				});		
+			
+				//add marker to the map
+				marker.setMap(map);
+				
+				//push markers to an array so that they can be cleaned
+				markersArray.push(marker);
+			});
+		
+
+		}
+	});																					  
+}
+
+
+//marker cleaning function, clean all markers on page from markersArray variable
+function clearOverlays() {
+	for (var i = 0; i< markersArray.length; i++)
+	{
+		markersArray[i].setMap(null);	
+	}
+	markersArray = [];
+	}	
+
+//a custom function for monetary convention (100,000 instead of 100000)	
+function numberWithCommas(x) {
+    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+  </script>
+
+  </head>
+
+  <body>
+  
+  <div id = 'results' style = "width:25%; float: left; height: 500px; overflow:auto">  
+  </div>
+	
+ <div style = "width:50%; float: left">
+ <div id="map-canvas" style="height: 500px"></div>
+ </div>
+ 
+ <div style = "width:25%; float: left;">
+<h3>Narrow Search</h3> 
+ <div>
+ Bedroom: <select name = 'beds' id = 'beds'>	
+	<option value = '0'>0</option>
+	<option value = '1'>1</option>
+	<option value = '2'>2</option>
+	<option value = '3'>3</option>
+	<option value = '4'>4</option>
+	<option value = '5'>5</option>
+	</select>
+	</div>
+	<div>
+	Bathrooms: <select name = 'baths' id = 'baths'>
+	
+	<option value = '0'>0</option>
+	<option value = '1'>1</option>
+	<option value = '2'>2</option>
+	<option value = '3'>3</option>
+	<option value = '4'>4</option>
+	<option value = '5'>5</option>
+	</select>
+	
+	</div>
+	
+	
+	<div>
+	Property Type: <select name = 'property' id = 'property'>
+	<option value = ''>Show All Type</option>
+	<option value = 'Single Family'>Single Family Homes</option>
+	<option value = 'Rental'>Rental</option>
+	<option value = 'Condo'>Condominimums</option>
+	<option value = 'Townhome'>Townhomes</option>
+	<option value = 'Land'>Land/Acreage</option>
+	<option value = 'Multi-family'>Multiple Family Homes</option>
+	<option value = 'Fractional Ownership'>Fractional Ownership</option>
+	<option value = 'Boatslip'>Boat Slip</option>
+	</select>	
+	</div>
+	
+	<div>
+	Price: 
+	<select name = 'price' id ='price'>
+	<option value = ''>Show all</option>
+	<option value = '0|50000'>under 50,000</option>
+	<option value = '50000|100000'>50,000-100,000</option>
+	<option value = '100000|150000'>100,000-150,000</option>
+	<option value = '150000|200000'>150,000-200,000</option>
+	<option value = '200000|300000'>200,000-300,000</option>
+	<option value = '300000|400000'>300,000-400,000</option>
+	<option value = '400000|500000'>400,000-500,000</option>
+	<option value = '500000|700000'>500,000-700,000</option>
+	<option value = '700000|1000000'>700,000-1,000,000</option>
+	<option value = '1000000|1500000'>1,000,000-1,500,000</option>
+	<option value = '1500000|2000000'>1,500,000-2,000,000</option>
+	<option value = '2000000|3000000'>2,000,000-3,000,000</option>
+	<option value = '3000000|1000000000'>over 3 Million </option>	
+    </select>
+
+	
+	
+	</div>
+	
+	<div>
+	SquareFoot: 
+	<select id = 'sqft' name = 'sqft'>
+	<option value=''>Show all</option>
+<option label="0 - 500" value="0-500">0 - 500</option>
+<option label="501 - 800" value="501-800">501 - 800</option>
+<option label="801 - 900" value="801-900">801 - 900</option>
+<option label="901 - 1000" value="901-1000">901 - 1000</option>
+<option label="1001 - 1100" value="1001-1100">1001 - 1100</option>
+<option label="1101 - 1200" value="1101-1200">1101 - 1200</option>
+<option label="1201 - 1300" value="1201-1300">1201 - 1300</option>
+<option label="1301 - 1400" value="1301-1400">1301 - 1400</option>
+<option label="1401 - 1500" value="1401-1500">1401 - 1500</option>
+<option label="1501 - 1600" value="1501-1600">1501 - 1600</option>
+<option label="1601 - 1700" value="1601-1700">1601 - 1700</option>
+<option label="1701 - 1800" value="1701-1800">1701 - 1800</option>
+<option label="1801 - 1900" value="1801-1900">1801 - 1900</option>
+<option label="1901 - 2000" value="1901-2000">1901 - 2000</option>
+<option label="2001 - 2100" value="2001-2100">2001 - 2100</option>
+<option label="2101 - 2200" value="2101-2200">2101 - 2200</option>
+<option label="2201 - 2300" value="2201-2300">2201 - 2300</option>
+<option label="2301 - 2400" value="2301-2400">2301 - 2400</option>
+<option label="2401 - 2500" value="2401-2500">2401 - 2500</option>
+<option label="2501 - 2600" value="2501-2600">2501 - 2600</option>
+<option label="2601 - 2700" value="2601-2700">2601 - 2700</option>
+<option label="2701 - 2800" value="2701-2800">2701 - 2800</option>
+<option label="2801 - 2900" value="2801-2900">2801 - 2900</option>
+<option label="2901 - 3000" value="2901-3000">2901 - 3000</option>
+<option label="3001 - 3100" value="3001-3100">3001 - 3100</option>
+<option label="3101 - 3200" value="3101-3200">3101 - 3200</option>
+<option label="3201 - 3300" value="3201-3300">3201 - 3300</option>
+<option label="3301 - 3400" value="3301-3400">3301 - 3400</option>
+<option label="3401 - 3500" value="3401-3500">3401 - 3500</option>
+<option label="3501 - 3600" value="3501-3600">3501 - 3600</option>
+<option label="3601 - 3700" value="3601-3700">3601 - 3700</option>
+<option label="3701 - 3800" value="3701-3800">3701 - 3800</option>
+<option label="3801 - 3900" value="3801-3900">3801 - 3900</option>
+<option label="3901 - 4000" value="3901-4000">3901 - 4000</option>
+<option label="4001 - 4100" value="4001-4100">4001 - 4100</option>
+<option label="4101 - 4200" value="4101-4200">4101 - 4200</option>
+<option label="4201 - 4300" value="4201-4300">4201 - 4300</option>
+<option label="4301 - 4400" value="4301-4400">4301 - 4400</option>
+<option label="4401 - 4500" value="4401-4500">4401 - 4500</option>
+<option label="4501 - 4600" value="4501-4600">4501 - 4600</option>
+<option label="4601 - 4700" value="4601-4700">4601 - 4700</option>
+<option label="4701 - 4800" value="4701-4800">4701 - 4800</option>
+<option label="4801 - 4900" value="4801-4900">4801 - 4900</option>
+<option label="4901 - 5000" value="4901-5000">4901 - 5000</option>
+<option label="5000 +" value="5000-100000000">5000 +</option>
+</select>
+	</select>	
+	</div>	
+	
+	<div>
+	<input type = 'button' class = 'more' value = 'Load Next' />
+	</div>
+	</div>  
+  </body>
+
+</html>
