@@ -1,6 +1,6 @@
 <?php
 //The ajax script
-//This script is greatly simplified 
+//This script requires Zend library files Zend/Config/Xml and /Zend/Db from Zend Framework 1
 
 //set siteroot one directory above the web root, so that configuration information would not be accessible via http. 
 $_SITE_ROOT = dirname(dirname(dirname(__FILE__)));
